@@ -5,9 +5,15 @@ Site web qui transforme une vidéo longue (lien YouTube ou autre, ou fichier) en
 ## Ce que fait le site
 
 1. **Télécharge** la vidéo depuis son lien (YouTube, Twitch, etc. via `yt-dlp`) ou prend un fichier envoyé depuis l'appareil.
-2. **Repère les meilleurs moments** : courbe « moments les plus revus » de YouTube quand elle existe, combinée à l'énergie sonore (réactions, explosions, musique).
-3. **Découpe** chaque passage en 1080×1920 (fond flouté ou zoom plein écran), avec le titre incrusté en haut si tu le souhaites.
-4. **Propose 3 titres par clip**, une description avec hashtags et le crédit de la chaîne d'origine. Un clic sur un titre le copie.
+2. **Repère les meilleurs moments** en croisant trois signaux : la courbe « moments les plus revus » de YouTube quand elle existe, l'intensité sonore (réactions, explosions, musique) et le rythme du montage (changements de plan).
+3. **Coupe proprement** : le début et la fin de chaque clip sont recalés sur les phrases quand la vidéo a des sous-titres, sinon sur les changements de plan, pour ne couper ni une phrase ni une scène.
+4. **Découpe** chaque passage en 1080×1920 (fond flouté ou zoom plein écran), avec une accroche incrustée en haut si tu le souhaites.
+5. **Écrit des textes adaptés à chaque clip** : 3 titres, une description avec hashtags et le crédit de la chaîne d'origine. Un clic sur un titre le copie.
+
+### Comment les textes s'adaptent
+
+- **Sans réglage (analyse automatique)** : le site regarde ce que contient chaque clip — le chapitre, les phrases prononcées (une citation marquante devient un titre), le thème abordé (carte, police, véhicules, date de sortie, graphismes…), et la situation (scène d'action, montée en tension, moment intense, plan calme). Deux clips ne reçoivent jamais le même titre.
+- **Avec l'IA** : Claude reçoit trois images de chaque passage et ce qui s'y dit. Il décrit ce qui se passe, note chaque passage, garde les meilleurs parmi deux fois plus de candidats, et écrit des titres et une accroche sur mesure.
 
 ## Lancer le site
 
@@ -27,13 +33,14 @@ docker build -t clipping .
 docker run -p 3000:3000 clipping
 ```
 
-## Titres écrits par IA (optionnel)
+## Activer l'IA
 
-Sans réglage, les titres viennent de modèles d'accroches intégrés. Pour des titres écrits à partir de ce qui se dit vraiment dans chaque clip (sous-titres, chapitres), fournis une clé API Anthropic :
+Crée une clé API sur <https://console.anthropic.com> (service payant à l'usage), puis au choix :
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-... npm start
-```
+- colle-la sur le site, dans « Titres par IA » (elle reste dans ton navigateur et n'est envoyée qu'à ton serveur) ;
+- ou lance le serveur avec `ANTHROPIC_API_KEY=sk-ant-... npm start`.
+
+Si la clé est refusée ou le service injoignable, le site le signale et repasse sur l'analyse automatique.
 
 ## Réglages
 

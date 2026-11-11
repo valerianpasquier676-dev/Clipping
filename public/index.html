@@ -27,6 +27,13 @@
   .file input { color: var(--muted); max-width: 100%; }
   .check { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 14px; color: var(--text); }
   button { font: inherit; cursor: pointer; border: 0; border-radius: 10px; }
+  .ai { margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+  .ai summary { cursor: pointer; font-weight: 600; }
+  .ai p { color: var(--muted); margin: 10px 0; }
+  .ai input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0f1116; color: var(--text); font: inherit; }
+  #aiState { font-weight: 400; color: var(--muted); }
+  #aiState.on { color: var(--ok); }
+  .what { font-size: 13px; color: var(--muted); font-style: italic; }
   .go { margin-top: 18px; width: 100%; padding: 14px; background: var(--accent); color: #fff; font-weight: 700; font-size: 17px; }
   .go:disabled { opacity: .5; cursor: wait; }
   #status { margin-top: 20px; display: none; }
@@ -88,6 +95,12 @@
       </div>
     </div>
     <label class="check"><input type="checkbox" id="burn" checked> Incruster le titre en haut de la vidéo</label>
+    <details class="ai" id="aiBox">
+      <summary>Titres par IA <span id="aiState"></span></summary>
+      <p>Avec une clé API Anthropic, l'IA regarde des images de chaque passage et lit ce qui s'y dit : elle garde les meilleurs moments et écrit des titres sur mesure. Sans clé, les titres sont déduits automatiquement du contenu (chapitres, paroles, rythme, son).</p>
+      <label for="key">Clé API Anthropic (créée sur console.anthropic.com, enregistrée uniquement dans ce navigateur)</label>
+      <input type="password" id="key" placeholder="sk-ant-…" autocomplete="off">
+    </details>
     <button class="go" id="go">Créer mes clips</button>
 
     <div id="status">
@@ -161,6 +174,7 @@ function renderClips(job) {
         el("video", { src: c.video, poster: c.thumb, controls: true, preload: "none", playsInline: true }),
         el("div", { className: "body" },
           el("div", { className: "meta", textContent: `Clip ${c.n} · ${fmt(c.start)} → ${fmt(c.end)} · titres : ${c.titleSource}` }),
+          ...(c.summary ? [el("div", { className: "what", textContent: c.summary })] : []),
           ...titles,
           caption,
           el("div", { className: "actions" },
@@ -192,6 +206,20 @@ async function poll(id) {
   }
 }
 
+let serverKey = false;
+function refreshAi() {
+  const on = serverKey || $("key").value.trim().length > 20;
+  $("aiState").textContent = on ? "· activés" : "· désactivés (analyse automatique)";
+  $("aiState").className = on ? "on" : "";
+}
+try { $("key").value = localStorage.getItem("clipping.key") || ""; } catch {}
+$("key").addEventListener("input", () => {
+  try { localStorage.setItem("clipping.key", $("key").value.trim()); } catch {}
+  refreshAi();
+});
+fetch("/api/config").then((r) => r.json()).then((c) => { serverKey = c.serverKey; refreshAi(); }).catch(refreshAi);
+refreshAi();
+
 $("form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const file = $("file").files[0];
@@ -204,6 +232,7 @@ $("form").addEventListener("submit", async (e) => {
   data.append("maxClips", $("max").value);
   data.append("format", $("format").value);
   data.append("burnTitle", $("burn").checked);
+  if ($("key").value.trim()) data.append("apiKey", $("key").value.trim());
 
   $("go").disabled = true;
   $("results").hidden = true;

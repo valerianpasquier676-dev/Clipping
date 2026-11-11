@@ -19,6 +19,7 @@ const jobs = new Map();
 let queue = Promise.resolve(); // une vidéo à la fois pour ne pas saturer la machine
 
 const app = express();
+app.get("/api/config", (_req, res) => res.json({ serverKey: Boolean(process.env.ANTHROPIC_API_KEY) }));
 app.use(express.json());
 app.use(express.static(path.join(here, "public")));
 
@@ -69,6 +70,7 @@ app.post("/api/jobs", upload.single("video"), (req, res) => {
     url: req.file ? null : url,
     upload: req.file ? req.file.path : null,
     uploadName: req.file ? req.file.originalname : null,
+    apiKey: typeof body.apiKey === "string" && body.apiKey.trim().length > 20 ? body.apiKey.trim() : null,
     options: {
       clipLength: clamp(body.clipLength, 10, 180, 30),
       maxClips: clamp(body.maxClips, 1, 12, 5),
@@ -134,7 +136,7 @@ app.listen(PORT, () => {
   console.log(`Clipping prêt sur http://localhost:${PORT}`);
   console.log(
     process.env.ANTHROPIC_API_KEY
-      ? "Titres : générés par IA (ANTHROPIC_API_KEY détectée)."
-      : "Titres : modèles intégrés (ajoute ANTHROPIC_API_KEY pour des titres IA).",
+      ? "Titres : écrits par IA (ANTHROPIC_API_KEY détectée)."
+      : "Titres : analyse automatique du contenu (clé API Anthropic à saisir sur le site pour les titres IA).",
   );
 });
