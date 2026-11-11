@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clipping — des clips TikTok en un lien</title>
+<style>
+  :root {
+    --bg: #0d0e12; --panel: #17191f; --line: #2a2d36; --text: #f2f3f5; --muted: #9aa0ad;
+    --accent: #ff2d6f; --accent2: #25d0c7; --ok: #3ddc84; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 28px; max-width: 60ch; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input[type=url], select {
+    width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: #0f1116; color: var(--text); font: inherit;
+  }
+  input[type=url]:focus, select:focus, textarea:focus { outline: 2px solid var(--accent2); outline-offset: 1px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-top: 16px; }
+  .file { margin-top: 12px; font-size: 14px; color: var(--muted); }
+  .file input { color: var(--muted); max-width: 100%; }
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 14px; color: var(--text); }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 10px; }
+  .go { margin-top: 18px; width: 100%; padding: 14px; background: var(--accent); color: #fff; font-weight: 700; font-size: 17px; }
+  .go:disabled { opacity: .5; cursor: wait; }
+  #status { margin-top: 20px; display: none; }
+  .bar { height: 10px; background: #0f1116; border-radius: 99px; overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .4s; }
+  .err { color: var(--err); }
+  .note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  h2 { margin: 36px 0 14px; font-size: 22px; }
+  #clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+  .clip { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
+  .clip video { width: 100%; aspect-ratio: 9/16; background: #000; display: block; max-height: 480px; object-fit: contain; }
+  .clip .body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .title { text-align: left; width: 100%; padding: 10px 12px; background: #0f1116; color: var(--text); border: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+  .title:hover { border-color: var(--accent2); }
+  .title.copied { border-color: var(--ok); }
+  textarea { width: 100%; min-height: 96px; resize: vertical; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0f1116; color: var(--text); font: 13px/1.45 inherit; }
+  .actions { display: flex; gap: 8px; }
+  .actions > * { flex: 1; text-align: center; padding: 10px; border-radius: 10px; font-size: 14px; font-weight: 600; text-decoration: none; }
+  .dl { background: var(--accent2); color: #06201f; }
+  .copy { background: #2a2d36; color: var(--text); }
+  footer { margin-top: 40px; font-size: 13px; color: var(--muted); max-width: 70ch; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Une vidéo longue, <span>des clips prêts pour TikTok</span></h1>
+  <p class="sub">Colle un lien YouTube (ou autre), le site repère les meilleurs moments, les découpe au format vertical et te propose des titres accrocheurs avec les hashtags.</p>
+
+  <form class="panel" id="form">
+    <label for="url">Lien de la vidéo</label>
+    <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+    <div class="file">ou un fichier depuis ton appareil : <input type="file" id="file" accept="video/*"></div>
+
+    <div class="row">
+      <div>
+        <label for="len">Durée de chaque clip</label>
+        <select id="len">
+          <option value="15">15 secondes</option>
+          <option value="30" selected>30 secondes</option>
+          <option value="45">45 secondes</option>
+          <option value="60">1 minute</option>
+          <option value="90">1 min 30</option>
+        </select>
+      </div>
+      <div>
+        <label for="max">Nombre de clips</label>
+        <select id="max">
+          <option>1</option><option>3</option><option selected>5</option><option>8</option><option>10</option>
+        </select>
+      </div>
+      <div>
+        <label for="format">Format</label>
+        <select id="format">
+          <option value="blur">Vertical, fond flouté</option>
+          <option value="crop">Vertical, zoom plein écran</option>
+          <option value="original">Format d'origine</option>
+        </select>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="burn" checked> Incruster le titre en haut de la vidéo</label>
+    <button class="go" id="go">Créer mes clips</button>
+
+    <div id="status">
+      <div id="step"></div>
+      <div class="bar"><i id="fill"></i></div>
+      <div class="note" id="notes"></div>
+    </div>
+  </form>
+
+  <div id="results" hidden>
+    <h2 id="resultsTitle"></h2>
+    <div id="clips"></div>
+  </div>
+
+  <footer>
+    Ne republie que des vidéos que tu as le droit d'utiliser (les tiennes, ou avec l'accord du créateur) et laisse le crédit dans la description : TikTok et YouTube suppriment les reposts signalés par les ayants droit.
+  </footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+async function copy(text, button, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const t = el("textarea", { value: text });
+    document.body.append(t); t.select(); document.execCommand("copy"); t.remove();
+  }
+  const old = button.textContent;
+  button.classList.add("copied");
+  if (label) button.textContent = label;
+  setTimeout(() => { button.classList.remove("copied"); button.textContent = old; }, 1200);
+}
+
+function showStatus(text, progress, isError) {
+  $("status").style.display = "block";
+  $("step").textContent = text;
+  $("step").className = isError ? "err" : "";
+  $("fill").style.width = (progress || 0) + "%";
+}
+
+function renderClips(job) {
+  $("results").hidden = false;
+  $("resultsTitle").textContent = `${job.clips.length} clip${job.clips.length > 1 ? "s" : ""} — ${job.videoTitle}`;
+  const list = $("clips");
+  list.replaceChildren();
+  for (const c of job.clips) {
+    const caption = el("textarea", { value: c.caption, ariaLabel: "Description TikTok" });
+    const titles = c.titles.map((t) => {
+      const b = el("button", { type: "button", className: "title", textContent: t, title: "Cliquer pour copier et utiliser ce titre" });
+      b.onclick = () => {
+        caption.value = caption.value.replace(c.current, t);
+        c.current = t;
+        copy(t, b);
+      };
+      return b;
+    });
+    c.current = c.titles[0];
+    const copyBtn = el("button", { type: "button", className: "copy", textContent: "Copier la description" });
+    copyBtn.onclick = () => copy(caption.value, copyBtn, "Copié ✓");
+    list.append(
+      el("div", { className: "clip" },
+        el("video", { src: c.video, poster: c.thumb, controls: true, preload: "none", playsInline: true }),
+        el("div", { className: "body" },
+          el("div", { className: "meta", textContent: `Clip ${c.n} · ${fmt(c.start)} → ${fmt(c.end)} · titres : ${c.titleSource}` }),
+          ...titles,
+          caption,
+          el("div", { className: "actions" },
+            el("a", { className: "dl", href: c.video + "?dl=1", textContent: "Télécharger" }),
+            copyBtn,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+async function poll(id) {
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1500));
+    let job;
+    try {
+      const res = await fetch("/api/jobs/" + id);
+      job = await res.json();
+      if (!res.ok) throw new Error(job.error);
+    } catch (err) {
+      showStatus(err.message || "Connexion perdue.", 0, true);
+      return;
+    }
+    $("notes").textContent = (job.notes || []).join(" ");
+    if (job.status === "error") return showStatus(job.error, job.progress, true);
+    showStatus(job.step + (job.status === "done" ? " ✓" : "…"), job.progress);
+    if (job.status === "done") return renderClips(job);
+  }
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = $("file").files[0];
+  const url = $("url").value.trim();
+  if (!file && !url) return showStatus("Colle un lien ou choisis un fichier vidéo.", 0, true);
+
+  const data = new FormData();
+  if (file) data.append("video", file); else data.append("url", url);
+  data.append("clipLength", $("len").value);
+  data.append("maxClips", $("max").value);
+  data.append("format", $("format").value);
+  data.append("burnTitle", $("burn").checked);
+
+  $("go").disabled = true;
+  $("results").hidden = true;
+  $("notes").textContent = "";
+  showStatus(file ? "Envoi du fichier…" : "Démarrage…", 0);
+  try {
+    const res = await fetch("/api/jobs", { method: "POST", body: data });
+    const job = await res.json();
+    if (!res.ok) throw new Error(job.error);
+    await poll(job.id);
+  } catch (err) {
+    showStatus(err.message || "Une erreur est survenue.", 0, true);
+  } finally {
+    $("go").disabled = false;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "clipping",
+  "version": "1.0.0",
+  "description": "Découpe automatiquement des vidéos longues en clips verticaux avec des titres accrocheurs pour TikTok",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "express": "^4.21.2",
+    "multer": "^2.0.2",
+    "zod": "^4.1.12"
+  }
+}
