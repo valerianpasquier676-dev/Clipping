@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { processJob } from "./lib/pipeline.js";
+import { PROVIDERS } from "./lib/providers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA = process.env.DATA_DIR || path.join(here, "data");
@@ -19,7 +20,32 @@ const jobs = new Map();
 let queue = Promise.resolve(); // une vidéo à la fois pour ne pas saturer la machine
 
 const app = express();
-app.get("/api/config", (_req, res) => res.json({ serverKey: Boolean(process.env.ANTHROPIC_API_KEY) }));
+
+/** Réglage IA d'un traitement : celui choisi sur le site, sinon celui du serveur. */
+function resolveAi(body = {}) {
+  const str = (v) => (typeof v === "string" ? v.trim() : "");
+  let provider = str(body.aiProvider);
+  let key = str(body.aiKey);
+  let model = str(body.aiModel);
+  let baseUrl = str(body.aiBaseUrl);
+  if (!provider || provider === "server") {
+    provider = process.env.AI_PROVIDER || (process.env.ANTHROPIC_API_KEY ? "claude" : "");
+    key = process.env.AI_API_KEY || (provider === "claude" ? process.env.ANTHROPIC_API_KEY || "" : "");
+    model = process.env.AI_MODEL || "";
+    baseUrl = process.env.AI_BASE_URL || "";
+  }
+  if (provider === "none" || !provider) return null;
+  if (provider !== "claude" && !PROVIDERS[provider]) return null;
+  if (provider !== "custom") baseUrl = "";
+  else if (!/^https?:\/\//i.test(baseUrl)) return null;
+  if ((provider === "claude" || PROVIDERS[provider]?.needsKey) && !key) return null;
+  return { provider, key: key || null, model: model || null, baseUrl: baseUrl || null };
+}
+
+app.get("/api/config", (_req, res) => {
+  const ai = resolveAi();
+  res.json({ serverAi: ai ? (ai.provider === "claude" ? "Claude" : PROVIDERS[ai.provider].label) : null });
+});
 app.use(express.json());
 app.use(express.static(path.join(here, "public")));
 
@@ -70,7 +96,7 @@ app.post("/api/jobs", upload.single("video"), (req, res) => {
     url: req.file ? null : url,
     upload: req.file ? req.file.path : null,
     uploadName: req.file ? req.file.originalname : null,
-    apiKey: typeof body.apiKey === "string" && body.apiKey.trim().length > 20 ? body.apiKey.trim() : null,
+    ai: resolveAi(body),
     options: {
       clipLength: clamp(body.clipLength, 10, 180, 30),
       maxClips: clamp(body.maxClips, 1, 12, 5),
@@ -134,9 +160,6 @@ setInterval(() => {
 
 app.listen(PORT, () => {
   console.log(`Clipping prêt sur http://localhost:${PORT}`);
-  console.log(
-    process.env.ANTHROPIC_API_KEY
-      ? "Titres : écrits par IA (ANTHROPIC_API_KEY détectée)."
-      : "Titres : analyse automatique du contenu (clé API Anthropic à saisir sur le site pour les titres IA).",
-  );
+  const ai = resolveAi();
+  console.log(ai ? `IA par défaut : ${ai.provider}.` : "IA par défaut : aucune (à choisir sur le site).");
 });

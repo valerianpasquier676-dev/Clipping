@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { pickSegments, refineSegments, describeSegment } from "../lib/segments.js";
 import { localTitles } from "../lib/titles.js";
 import { parseVtt, wrapHook } from "../lib/pipeline.js";
+import { parseLoose, cleanClips } from "../lib/providers.js";
 
 test("choisit les passages les plus forts, sans chevauchement", () => {
   const energy = Array.from({ length: 150 }, (_, t) => (t >= 40 && t < 70 ? 1 : t >= 110 && t < 135 ? 0.7 : 0.05));
@@ -68,4 +69,12 @@ test("sous-titres et texte incrusté", () => {
   const cues = parseVtt("WEBVTT\n\n00:00:01.000 --> 00:00:03.000 align:start\n<c>Salut</c>\n\n00:00:03.000 --> 00:00:05.000\nSalut\nà tous");
   assert.deepEqual(cues, [{ start: 1, end: 3, text: "Salut" }, { start: 3, end: 5, text: "à tous" }]);
   assert.equal(wrapHook("Ce détail de GTA 6 change TOUT 😳"), "Ce détail de GTA 6\nchange TOUT");
+});
+
+test("réponses d'IA : JSON entouré de texte, entrées invalides écartées", () => {
+  const parsed = parseLoose('Voici :\n```json\n{"clips":[{"index":1,"score":"8","titles":["A","",3],"hashtags":["gta6","#x y"]},{"index":9,"titles":["B"]},{"index":0,"titles":[]}]}\n```');
+  const out = cleanClips(parsed, [0, 1]);
+  assert.deepEqual([...out.keys()], [1]);
+  assert.deepEqual(out.get(1), { titles: ["A"], hook: "A", hashtags: ["#gta6", "#xy"], score: 8, summary: null });
+  assert.equal(parseLoose("désolé"), null);
 });

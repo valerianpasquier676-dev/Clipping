@@ -30,7 +30,8 @@
   .ai { margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
   .ai summary { cursor: pointer; font-weight: 600; }
   .ai p { color: var(--muted); margin: 10px 0; }
-  .ai input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0f1116; color: var(--text); font: inherit; }
+  .ai label { margin-top: 10px; }
+  .ai input, .ai select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0f1116; color: var(--text); font: inherit; }
   #aiState { font-weight: 400; color: var(--muted); }
   #aiState.on { color: var(--ok); }
   .what { font-size: 13px; color: var(--muted); font-style: italic; }
@@ -97,9 +98,21 @@
     <label class="check"><input type="checkbox" id="burn" checked> Incruster le titre en haut de la vidéo</label>
     <details class="ai" id="aiBox">
       <summary>Titres par IA <span id="aiState"></span></summary>
-      <p>Avec une clé API Anthropic, l'IA regarde des images de chaque passage et lit ce qui s'y dit : elle garde les meilleurs moments et écrit des titres sur mesure. Sans clé, les titres sont déduits automatiquement du contenu (chapitres, paroles, rythme, son).</p>
-      <label for="key">Clé API Anthropic (créée sur console.anthropic.com, enregistrée uniquement dans ce navigateur)</label>
-      <input type="password" id="key" placeholder="sk-ant-…" autocomplete="off">
+      <p>Une IA regarde une image de chaque passage et lit ce qui s'y dit : elle garde les meilleurs moments et écrit des titres sur mesure. Sans IA, les titres sont déduits automatiquement du contenu.</p>
+      <label for="prov">Quelle IA utiliser ?</label>
+      <select id="prov">
+        <option value="none">Aucune — analyse automatique</option>
+        <option value="ollama">Ollama — gratuit et illimité, tourne sur ton ordinateur</option>
+        <option value="groq">Groq — gratuit avec une limite par jour</option>
+        <option value="gemini">Gemini (Google) — gratuit avec une limite par jour</option>
+        <option value="openrouter">OpenRouter — modèles gratuits avec limite</option>
+        <option value="claude">Claude (Anthropic) — payant, le plus précis</option>
+        <option value="custom">Autre IA compatible OpenAI</option>
+      </select>
+      <p id="provHelp"></p>
+      <div id="urlRow"><label for="aiUrl">Adresse de l'IA</label><input type="url" id="aiUrl" placeholder="http://localhost:1234/v1" autocomplete="off"></div>
+      <div id="keyRow"><label for="key">Clé API (enregistrée uniquement dans ce navigateur)</label><input type="password" id="key" autocomplete="off"></div>
+      <div id="modelRow"><label for="aiModel">Modèle (laisse vide pour un choix automatique)</label><input type="text" id="aiModel" autocomplete="off"></div>
     </details>
     <button class="go" id="go">Créer mes clips</button>
 
@@ -206,18 +219,37 @@ async function poll(id) {
   }
 }
 
-let serverKey = false;
+const HELP = {
+  none: "",
+  ollama: "Installe Ollama (ollama.com), puis lance « ollama pull gemma3:4b » dans un terminal. Aucune clé, aucune limite : tout tourne sur ton ordinateur (8 Go de mémoire conseillés).",
+  groq: "Crée une clé gratuite sur console.groq.com (menu API Keys) et colle-la ici.",
+  gemini: "Crée une clé gratuite sur aistudio.google.com (bouton Get API key) et colle-la ici.",
+  openrouter: "Crée une clé sur openrouter.ai (menu Keys) et colle-la ici : le site choisit un modèle gratuit.",
+  claude: "Crée une clé sur console.anthropic.com et colle-la ici. Service payant à l'usage.",
+  custom: "Pour LM Studio, llama.cpp ou tout service qui parle l'API OpenAI : indique son adresse.",
+};
+let serverAi = null;
+const store = (k, v) => { try { v === undefined || localStorage.setItem("clipping." + k, v); return localStorage.getItem("clipping." + k) || ""; } catch { return ""; } };
 function refreshAi() {
-  const on = serverKey || $("key").value.trim().length > 20;
-  $("aiState").textContent = on ? "· activés" : "· désactivés (analyse automatique)";
-  $("aiState").className = on ? "on" : "";
+  const p = $("prov").value;
+  $("provHelp").textContent = HELP[p];
+  $("urlRow").hidden = p !== "custom";
+  $("keyRow").hidden = ["none", "ollama"].includes(p);
+  $("modelRow").hidden = ["none", "claude"].includes(p);
+  $("key").value = store("key." + p);
+  $("aiModel").value = store("model." + p);
+  const label = p !== "none" ? $("prov").selectedOptions[0].textContent.split(" — ")[0] : serverAi;
+  $("aiState").textContent = label ? "· " + label : "· désactivés (analyse automatique)";
+  $("aiState").className = label ? "on" : "";
 }
-try { $("key").value = localStorage.getItem("clipping.key") || ""; } catch {}
-$("key").addEventListener("input", () => {
-  try { localStorage.setItem("clipping.key", $("key").value.trim()); } catch {}
-  refreshAi();
-});
-fetch("/api/config").then((r) => r.json()).then((c) => { serverKey = c.serverKey; refreshAi(); }).catch(refreshAi);
+$("prov").value = store("prov") || "none";
+if (!$("prov").value) $("prov").value = "none";
+$("aiUrl").value = store("url");
+$("prov").addEventListener("change", () => { store("prov", $("prov").value); refreshAi(); });
+$("key").addEventListener("input", () => store("key." + $("prov").value, $("key").value.trim()));
+$("aiModel").addEventListener("input", () => store("model." + $("prov").value, $("aiModel").value.trim()));
+$("aiUrl").addEventListener("input", () => store("url", $("aiUrl").value.trim()));
+fetch("/api/config").then((r) => r.json()).then((c) => { serverAi = c.serverAi; refreshAi(); }).catch(() => {});
 refreshAi();
 
 $("form").addEventListener("submit", async (e) => {
@@ -232,7 +264,10 @@ $("form").addEventListener("submit", async (e) => {
   data.append("maxClips", $("max").value);
   data.append("format", $("format").value);
   data.append("burnTitle", $("burn").checked);
-  if ($("key").value.trim()) data.append("apiKey", $("key").value.trim());
+  data.append("aiProvider", $("prov").value === "none" && serverAi ? "server" : $("prov").value);
+  data.append("aiKey", $("key").value.trim());
+  data.append("aiModel", $("aiModel").value.trim());
+  data.append("aiBaseUrl", $("aiUrl").value.trim());
 
   $("go").disabled = true;
   $("results").hidden = true;

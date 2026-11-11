@@ -13,7 +13,7 @@ Site web qui transforme une vidéo longue (lien YouTube ou autre, ou fichier) en
 ### Comment les textes s'adaptent
 
 - **Sans réglage (analyse automatique)** : le site regarde ce que contient chaque clip — le chapitre, les phrases prononcées (une citation marquante devient un titre), le thème abordé (carte, police, véhicules, date de sortie, graphismes…), et la situation (scène d'action, montée en tension, moment intense, plan calme). Deux clips ne reçoivent jamais le même titre.
-- **Avec l'IA** : Claude reçoit trois images de chaque passage et ce qui s'y dit. Il décrit ce qui se passe, note chaque passage, garde les meilleurs parmi deux fois plus de candidats, et écrit des titres et une accroche sur mesure.
+- **Avec une IA** (gratuite ou payante, voir plus bas) : elle reçoit des images de chaque passage et ce qui s'y dit. Elle décrit ce qui se passe, note chaque passage, garde les meilleurs parmi deux fois plus de candidats, et écrit des titres et une accroche sur mesure.
 
 ## Lancer le site
 
@@ -35,20 +35,32 @@ docker run -p 3000:3000 clipping
 
 ## Activer l'IA
 
-Crée une clé API sur <https://console.anthropic.com> (service payant à l'usage), puis au choix :
+Tout se règle sur le site, dans « Titres par IA ». L'IA reçoit une image de chaque passage et ce qui s'y dit, note les passages, garde les meilleurs et écrit titres et accroche.
 
-- colle-la sur le site, dans « Titres par IA » (elle reste dans ton navigateur et n'est envoyée qu'à ton serveur) ;
-- ou lance le serveur avec `ANTHROPIC_API_KEY=sk-ant-... npm start`.
+| IA | Coût | Mise en route |
+|---|---|---|
+| **Ollama** | Gratuit et illimité, tourne sur ton ordinateur | Installe [Ollama](https://ollama.com), puis `ollama pull gemma3:4b`. Pas de clé. 8 Go de mémoire conseillés. |
+| **Groq** | Gratuit avec une limite par jour | Clé sur [console.groq.com](https://console.groq.com) |
+| **Gemini** | Gratuit avec une limite par jour | Clé sur [aistudio.google.com](https://aistudio.google.com) |
+| **OpenRouter** | Modèles gratuits avec limite | Clé sur [openrouter.ai](https://openrouter.ai) |
+| **Claude** | Payant à l'usage, le plus précis | Clé sur [console.anthropic.com](https://console.anthropic.com) |
+| **Autre** | Selon le service | Adresse d'un service compatible OpenAI (LM Studio, llama.cpp…) |
 
-Si la clé est refusée ou le service injoignable, le site le signale et repasse sur l'analyse automatique.
+Le modèle est choisi automatiquement (tu peux en imposer un). Si l'IA est injoignable, refuse la clé ou atteint sa limite, le site le signale et les passages concernés gardent leurs titres d'analyse automatique.
+
+Les clés restent dans ton navigateur et ne sont envoyées qu'à ton serveur. Pour fixer une IA par défaut côté serveur : `AI_PROVIDER` (`ollama`, `groq`, `gemini`, `openrouter`, `claude`, `custom`), `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL`.
+
+Avec Docker, Ollama tourne hors du conteneur : ajoute `-e OLLAMA_URL=http://host.docker.internal:11434/v1`.
 
 ## Réglages
 
 | Variable | Rôle | Défaut |
 |---|---|---|
 | `PORT` | Port du site | `3000` |
-| `ANTHROPIC_API_KEY` | Active les titres IA | — |
-| `CLIPPING_MODEL` | Modèle utilisé pour les titres | `claude-opus-5-5` |
+| `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL` | IA par défaut du serveur | aucune |
+| `ANTHROPIC_API_KEY` | Raccourci pour utiliser Claude par défaut | — |
+| `CLIPPING_MODEL` | Modèle Claude utilisé | `claude-opus-5-5` |
+| `OLLAMA_URL` | Adresse d'Ollama | `http://localhost:11434/v1` |
 | `MAX_VIDEO_SECONDS` | Durée maximale d'une vidéo source | `10800` (3 h) |
 | `MAX_UPLOAD_MB` | Taille maximale d'un fichier envoyé | `2048` |
 | `KEEP_HOURS` | Durée de conservation des clips | `24` |
