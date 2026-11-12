@@ -143,7 +143,7 @@
 
   <h2>Automatisation</h2>
   <div class="panel" id="auto">
-    <p class="hint">Ajoute des chaînes à surveiller : dès qu'une nouvelle vidéo sort, le site la télécharge, la découpe et prépare les titres tout seul, avec les réglages choisis en haut de la page. Les clips t'attendent ensuite dans « Mes clips ».</p>
+    <p class="hint">Ajoute des chaînes à surveiller : dès qu'une nouvelle vidéo sort, le site la télécharge, la découpe et prépare les titres tout seul, avec les réglages choisis en haut de la page. Les clips t'attendent ensuite dans « File d'attente et clips ».</p>
     <label for="chan">Chaîne ou playlist à surveiller</label>
     <div class="inline">
       <input type="url" id="chan" placeholder="https://www.youtube.com/@RockstarGames" autocomplete="off">
@@ -173,8 +173,14 @@
     <div class="note" id="autoMsg"></div>
   </div>
 
-  <h2>Mes clips</h2>
-  <div class="panel"><ul id="library"><li class="hint">Aucune vidéo traitée pour l'instant.</li></ul></div>
+  <h2>File d'attente et clips</h2>
+  <div class="panel">
+    <div class="inline">
+      <button type="button" class="small ghost" id="pauseBtn">⏸ Mettre en pause</button>
+      <span class="hint" id="queueState" style="margin:0;align-self:center"></span>
+    </div>
+    <ul id="library"><li class="hint">Aucune vidéo traitée pour l'instant.</li></ul>
+  </div>
 
   <footer>
     Ne republie que des vidéos que tu as le droit d'utiliser (les tiennes, ou avec l'accord du créateur) et laisse le crédit dans la description : TikTok et YouTube suppriment les reposts signalés par les ayants droit.
@@ -184,6 +190,15 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+// Lit une réponse du serveur ; s'il a redémarré, la réponse n'est pas du JSON.
+async function readJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    throw new Error("Le serveur ne répond pas : il a sans doute redémarré (mémoire insuffisante ou mise en veille). Attends une minute puis relance, avec moins de clips ou des clips plus courts.");
+  }
+}
 
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -248,24 +263,35 @@ function renderClips(job) {
   }
 }
 
+const stopped = new Set(); // traitements arrêtés ou retirés depuis cette page
+let queuePaused = false;
+let watching = null; // la barre de progression suit la dernière vidéo lancée
+
 async function poll(id) {
+  let misses = 0;
   for (;;) {
     await new Promise((r) => setTimeout(r, 1500));
+    if (watching !== id) return;
     let job;
     try {
       const res = await fetch("/api/jobs/" + id);
-      job = await res.json();
+      job = await readJson(res);
       if (!res.ok) throw new Error(job.error);
+      misses = 0;
     } catch (err) {
-      showStatus(err.message || "Connexion perdue.", 0, true);
+      // Une coupure passagère ne doit pas faire perdre le suivi : on réessaie quelques fois.
+      if (stopped.has(id)) return showStatus("Traitement arrêté.", 0, true);
+      if (++misses < 5 && !/introuvable/.test(err.message)) continue;
+      showStatus(/introuvable/.test(err.message) ? "Le serveur a redémarré pendant le traitement et l'a perdu. Relance avec moins de clips ou des clips plus courts." : err.message, 0, true);
       return;
     }
     $("notes").textContent = (job.notes || []).join(" ");
     if (job.status === "error") return showStatus(job.error, job.progress, true);
-    showStatus(job.step + (job.status === "done" ? " ✓" : "…"), job.progress);
+    showStatus(job.step + (job.status === "done" ? " ✓" : queuePaused ? " (en pause)" : "…"), job.progress);
     if (job.status === "done") { loadLibrary(); return renderClips(job); }
   }
 }
+
 
 const HELP = {
   none: "",
@@ -323,8 +349,12 @@ $("form").addEventListener("submit", async (e) => {
   showStatus(file ? "Envoi du fichier…" : "Démarrage…", 0);
   try {
     const res = await fetch("/api/jobs", { method: "POST", body: data });
-    const job = await res.json();
+    const job = await readJson(res);
     if (!res.ok) throw new Error(job.error);
+    loadLibrary();
+    // Le bouton redevient disponible tout de suite : on peut ajouter d'autres vidéos à la file.
+    $("go").disabled = false;
+    watching = job.id;
     await poll(job.id);
   } catch (err) {
     showStatus(err.message || "Une erreur est survenue.", 0, true);
@@ -336,7 +366,7 @@ $("form").addEventListener("submit", async (e) => {
 // --- Automatisation et bibliothèque ---
 async function api(path, method = "GET", body) {
   const res = await fetch(path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
-  const json = await res.json();
+  const json = await readJson(res);
   if (!res.ok) throw new Error(json.error || "Erreur");
   return json;
 }
@@ -395,26 +425,55 @@ $("autoCheck").onclick = async () => {
 };
 
 async function loadLibrary() {
-  let list;
-  try { list = await api("/api/jobs"); } catch { return; }
-  if (!list.length) return;
+  let data;
+  try { data = await api("/api/jobs"); } catch { return; }
+  queuePaused = data.paused;
+  const list = data.jobs;
+  const waiting = list.filter((j) => j.status === "queued").length;
+  const running = list.some((j) => j.status === "running");
+  $("pauseBtn").textContent = queuePaused ? "▶ Reprendre" : "⏸ Mettre en pause";
+  $("queueState").textContent = queuePaused
+    ? "File en pause : rien ne tourne tant que tu ne reprends pas."
+    : running || waiting ? `${running ? "1 vidéo en cours" : "Rien en cours"}, ${waiting} en attente.` : "";
+  if (!list.length) {
+    $("library").replaceChildren(el("li", { className: "hint", textContent: "Aucune vidéo traitée pour l'instant." }));
+    return;
+  }
   $("library").replaceChildren(...list.map((j) => {
-    const state = j.status === "done" ? `${j.clipCount} clip${j.clipCount > 1 ? "s" : ""}` : j.status === "error" ? "Erreur : " + j.error : `${j.step} (${j.progress} %)`;
-    const row = el("li", {},
-      el("div", {}, j.videoTitle || "Vidéo en attente", ...(j.auto ? [el("span", { className: "tag", textContent: "auto" })] : []),
-        el("small", { className: j.status === "error" ? "err" : "", textContent: `${when(j.createdAt)} · ${state}` })));
+    const state = j.status === "done" ? `${j.clipCount} clip${j.clipCount > 1 ? "s" : ""}`
+      : j.status === "error" ? "Erreur : " + j.error
+      : j.status === "queued" ? "En attente"
+      : `${j.step} (${j.progress} %)${queuePaused ? " — en pause" : ""}`;
+    const buttons = el("div", { className: "inline" });
     if (j.status === "done") {
       const open = el("button", { type: "button", textContent: "Voir les clips" });
       open.onclick = async () => { renderClips(await api("/api/jobs/" + j.id)); $("results").scrollIntoView({ behavior: "smooth" }); };
-      row.append(open);
+      buttons.append(open);
     }
-    return row;
+    const label = j.status === "running" ? "Arrêter" : j.status === "queued" ? "Retirer" : "Supprimer";
+    const del = el("button", { type: "button", textContent: label });
+    del.onclick = async () => {
+      if (j.status === "done" && !confirm("Supprimer cette vidéo et ses clips ?")) return;
+      stopped.add(j.id);
+      try { await api("/api/jobs/" + j.id, "DELETE"); } catch {}
+      loadLibrary();
+    };
+    buttons.append(del);
+    return el("li", {},
+      el("div", {}, j.videoTitle || "Vidéo", ...(j.auto ? [el("span", { className: "tag", textContent: "auto" })] : []),
+        el("small", { className: j.status === "error" ? "err" : "", textContent: `${when(j.createdAt)} · ${state}` })),
+      buttons);
   }));
 }
 
+$("pauseBtn").onclick = async () => {
+  try { await api(queuePaused ? "/api/queue/resume" : "/api/queue/pause", "POST"); } catch {}
+  loadLibrary();
+};
+
 api("/api/watch").then((w) => renderWatch(w, true)).catch(() => {});
 loadLibrary();
-setInterval(loadLibrary, 20000);
+setInterval(loadLibrary, 5000);
 </script>
 </body>
 </html>

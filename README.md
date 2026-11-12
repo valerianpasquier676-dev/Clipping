@@ -60,11 +60,24 @@ Dans la partie « Automatisation » du site :
 2. indique des mots-clés pour ne garder que certaines vidéos (par exemple `gta 6, gta vi`) ;
 3. coche « Automatisation activée » et enregistre : les réglages de découpage et l'IA choisis en haut de la page sont repris.
 
-Le site vérifie ensuite les chaînes à intervalle régulier. À chaque nouvelle vidéo, il la télécharge, la découpe et prépare titres et descriptions ; le résultat apparaît dans « Mes clips » avec l'étiquette « auto ». À l'ajout d'une chaîne, seule sa vidéo la plus récente est traitée, pas tout son historique.
+Le site vérifie ensuite les chaînes à intervalle régulier. À chaque nouvelle vidéo, il la télécharge, la découpe et prépare titres et descriptions ; le résultat apparaît dans « File d'attente et clips » avec l'étiquette « auto ». À l'ajout d'une chaîne, seule sa vidéo la plus récente est traitée, pas tout son historique.
 
 Le serveur doit rester allumé pour que la veille tourne. Les réglages (y compris la clé de l'IA choisie) sont enregistrés dans `data/watch.json` sur ta machine, et les clips sont gardés 72 h.
 
 La publication sur TikTok reste manuelle : tu télécharges le clip, tu copies la description, tu publies.
+
+## File d'attente
+
+Les vidéos sont traitées une par une. Tu peux en lancer plusieurs à la suite : elles se rangent dans « File d'attente et clips », où tu peux :
+
+- **mettre en pause / reprendre** : le traitement en cours est gelé (il ne consomme plus de processeur) et aucune autre vidéo ne démarre ;
+- **arrêter** la vidéo en cours ;
+- **retirer** une vidéo en attente ;
+- **supprimer** une vidéo terminée et ses clips.
+
+## Petites machines (hébergement gratuit)
+
+Sur Render, ou avec `LIGHT_MODE=1`, le site passe en mode léger : clips en 720×1280, encodage plus sobre et analyse des plans accélérée, pour tenir dans peu de mémoire et de processeur. `LIGHT_MODE=0` force la qualité normale (1080×1920).
 
 ## Réglages
 
@@ -78,6 +91,7 @@ La publication sur TikTok reste manuelle : tu télécharges le clip, tu copies l
 | `MAX_VIDEO_SECONDS` | Durée maximale d'une vidéo source | `10800` (3 h) |
 | `MAX_UPLOAD_MB` | Taille maximale d'un fichier envoyé | `2048` |
 | `KEEP_HOURS` | Durée de conservation des clips | `72` |
+| `LIGHT_MODE` | `1` : mode léger (720p), `0` : qualité normale | automatique sur Render |
 | `DATA_DIR` | Dossier de travail | `./data` |
 
 ## Bon à savoir

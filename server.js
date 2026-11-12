@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { processJob } from "./lib/pipeline.js";
+import { processJob, setPaused, cancelRunning } from "./lib/pipeline.js";
 import { PROVIDERS } from "./lib/providers.js";
 import { createWatcher } from "./lib/watcher.js";
 
@@ -27,7 +27,35 @@ for (const id of fs.readdirSync(JOBS_DIR)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
-let queue = Promise.resolve(); // une vidéo à la fois pour ne pas saturer la machine
+// File d'attente : une vidéo à la fois pour ne pas saturer la machine.
+const pending = [];
+let current = null;
+let paused = false;
+
+async function pump() {
+  if (current || paused || !pending.length) return;
+  const job = (current = pending.shift());
+  job.status = "running";
+  try {
+    await processJob(job);
+    job.status = "done";
+  } catch (err) {
+    if (!job.cancelled) console.error(`[job ${job.id}]`, err);
+    job.status = "error";
+    job.error = err.message || "Erreur inconnue";
+  }
+  current = null;
+  if (job.cancelled) {
+    fs.rmSync(job.dir, { recursive: true, force: true });
+    jobs.delete(job.id);
+  } else {
+    // Sauvegarde pour retrouver les clips après un redémarrage (sans la clé de l'IA).
+    try {
+      fs.writeFileSync(path.join(job.dir, "job.json"), JSON.stringify({ ...publicJob(job), url: job.url }));
+    } catch {}
+  }
+  pump();
+}
 
 const app = express();
 
@@ -123,21 +151,8 @@ function startJob({ id = crypto.randomBytes(8).toString("hex"), url = null, file
   };
   jobs.set(id, job);
 
-  queue = queue.then(async () => {
-    job.status = "running";
-    try {
-      await processJob(job);
-      job.status = "done";
-    } catch (err) {
-      console.error(`[job ${id}]`, err);
-      job.status = "error";
-      job.error = err.message || "Erreur inconnue";
-    }
-    // Sauvegarde pour retrouver les clips après un redémarrage (sans la clé de l'IA).
-    try {
-      fs.writeFileSync(path.join(dir, "job.json"), JSON.stringify({ ...publicJob(job), url: job.url }));
-    } catch {}
-  });
+  pending.push(job);
+  pump();
   return job;
 }
 
@@ -165,10 +180,39 @@ app.post("/api/jobs", upload.single("video"), (req, res) => {
 app.get("/api/jobs", (_req, res) => {
   const list = [...jobs.values()]
     .sort((a, b) => b.createdAt - a.createdAt)
-    .map(({ id, status, step, progress, error, videoTitle, auto, createdAt, clips }) => ({
-      id, status, step, progress, error, videoTitle, auto, createdAt, clipCount: clips.length,
+    .map(({ id, status, step, progress, error, videoTitle, uploadName, url, auto, createdAt, clips }) => ({
+      id, status, step, progress, error, auto, createdAt, clipCount: clips.length,
+      videoTitle: videoTitle || uploadName || url,
     }));
-  res.json(list);
+  res.json({ paused, jobs: list });
+});
+
+// --- File d'attente : pause, reprise, arrêt, suppression ---
+app.post("/api/queue/pause", (_req, res) => {
+  paused = true;
+  setPaused(true);
+  res.json({ paused });
+});
+
+app.post("/api/queue/resume", (_req, res) => {
+  paused = false;
+  setPaused(false);
+  pump();
+  res.json({ paused });
+});
+
+app.delete("/api/jobs/:id", (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: "Traitement introuvable." });
+  if (job === current) {
+    cancelRunning(job); // pump() supprime ses fichiers dès que le programme en cours s'est arrêté
+  } else {
+    const i = pending.indexOf(job);
+    if (i >= 0) pending.splice(i, 1);
+    fs.rmSync(job.dir, { recursive: true, force: true });
+    jobs.delete(job.id);
+  }
+  res.json({ ok: true });
 });
 
 // --- Automatisation ---
