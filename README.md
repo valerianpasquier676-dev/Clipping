@@ -52,6 +52,20 @@ Les clés restent dans ton navigateur et ne sont envoyées qu'à ton serveur. Po
 
 Avec Docker, Ollama tourne hors du conteneur : ajoute `-e OLLAMA_URL=http://host.docker.internal:11434/v1`.
 
+## Automatisation
+
+Dans la partie « Automatisation » du site :
+
+1. ajoute l'adresse d'une ou plusieurs chaînes (ou playlists) à surveiller ;
+2. indique des mots-clés pour ne garder que certaines vidéos (par exemple `gta 6, gta vi`) ;
+3. coche « Automatisation activée » et enregistre : les réglages de découpage et l'IA choisis en haut de la page sont repris.
+
+Le site vérifie ensuite les chaînes à intervalle régulier. À chaque nouvelle vidéo, il la télécharge, la découpe et prépare titres et descriptions ; le résultat apparaît dans « Mes clips » avec l'étiquette « auto ». À l'ajout d'une chaîne, seule sa vidéo la plus récente est traitée, pas tout son historique.
+
+Le serveur doit rester allumé pour que la veille tourne. Les réglages (y compris la clé de l'IA choisie) sont enregistrés dans `data/watch.json` sur ta machine, et les clips sont gardés 72 h.
+
+La publication sur TikTok reste manuelle : tu télécharges le clip, tu copies la description, tu publies.
+
 ## Réglages
 
 | Variable | Rôle | Défaut |
@@ -63,13 +77,13 @@ Avec Docker, Ollama tourne hors du conteneur : ajoute `-e OLLAMA_URL=http://host
 | `OLLAMA_URL` | Adresse d'Ollama | `http://localhost:11434/v1` |
 | `MAX_VIDEO_SECONDS` | Durée maximale d'une vidéo source | `10800` (3 h) |
 | `MAX_UPLOAD_MB` | Taille maximale d'un fichier envoyé | `2048` |
-| `KEEP_HOURS` | Durée de conservation des clips | `24` |
+| `KEEP_HOURS` | Durée de conservation des clips | `72` |
 | `DATA_DIR` | Dossier de travail | `./data` |
 
 ## Bon à savoir
 
 - YouTube bloque souvent les téléchargements depuis les hébergeurs cloud : le site marche le mieux lancé sur ton ordinateur. Garde `yt-dlp` à jour (`pip install -U yt-dlp`).
-- Les vidéos sont traitées une par une ; les clips sont gardés 24 h puis supprimés.
+- Les vidéos sont traitées une par une ; les clips sont gardés 72 h puis supprimés.
 - Republie uniquement des vidéos que tu as le droit d'utiliser (les tiennes ou avec l'accord du créateur) et laisse le crédit dans la description.
 
 ## Tests

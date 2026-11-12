@@ -1,4 +1,8 @@
 import test from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createWatcher } from "../lib/watcher.js";
 import assert from "node:assert/strict";
 import { pickSegments, refineSegments, describeSegment } from "../lib/segments.js";
 import { localTitles } from "../lib/titles.js";
@@ -77,4 +81,24 @@ test("réponses d'IA : JSON entouré de texte, entrées invalides écartées", (
   assert.deepEqual([...out.keys()], [1]);
   assert.deepEqual(out.get(1), { titles: ["A"], hook: "A", hashtags: ["#gta6", "#xy"], score: 8, summary: null });
   assert.equal(parseLoose("désolé"), null);
+});
+
+test("veille : première visite = dernière vidéo seulement, puis nouvelles vidéos filtrées par mot-clé", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clipping-"));
+  const started = [];
+  let feed = [{ id: "c", url: "https://x/c", title: "GTA 6 news" }, { id: "b", url: "https://x/b", title: "GTA 6 old" }];
+  const make = () => createWatcher({ file: path.join(dir, "watch.json"), startJob: (v) => started.push(v.title), list: async () => feed, log: () => {} });
+  const w = make();
+  w.addChannel("https://x/chan");
+  w.update({ keyword: "gta 6, gta vi" });
+  assert.deepEqual(await w.check(), ["GTA 6 news"]);
+  assert.deepEqual(await w.check(), []);
+  feed = [{ id: "e", url: "https://x/e", title: "GTA VI trailer 3" }, { id: "d", url: "https://x/d", title: "Red Dead" }, ...feed];
+  assert.deepEqual(await make().check(), ["GTA VI trailer 3"]); // l'état survit à un redémarrage
+  assert.deepEqual(started, ["GTA 6 news", "GTA VI trailer 3"]);
+  feed = null;
+  const w3 = make();
+  await w3.check();
+  assert.match(w3.view().channels[0].lastError, /null|Cannot/);
+  assert.equal("ai" in w3.view() || "seen" in w3.view(), false);
 });

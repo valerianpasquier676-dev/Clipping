@@ -6,17 +6,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { processJob } from "./lib/pipeline.js";
 import { PROVIDERS } from "./lib/providers.js";
+import { createWatcher } from "./lib/watcher.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA = process.env.DATA_DIR || path.join(here, "data");
 const JOBS_DIR = path.join(DATA, "jobs");
 const PORT = Number(process.env.PORT || 3000);
-const KEEP_HOURS = Number(process.env.KEEP_HOURS || 24);
+const KEEP_HOURS = Number(process.env.KEEP_HOURS || 72);
 
-fs.rmSync(JOBS_DIR, { recursive: true, force: true }); // les jobs vivent en mémoire : on repart propre
 fs.mkdirSync(JOBS_DIR, { recursive: true });
 
+// Au démarrage, on retrouve les clips déjà produits ; les traitements interrompus sont supprimés.
 const jobs = new Map();
+for (const id of fs.readdirSync(JOBS_DIR)) {
+  const dir = path.join(JOBS_DIR, id);
+  try {
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, "job.json"), "utf8"));
+    jobs.set(id, { ...saved, id, dir });
+  } catch {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
 let queue = Promise.resolve(); // une vidéo à la fois pour ne pas saturer la machine
 
 const app = express();
@@ -70,39 +80,39 @@ const clamp = (v, lo, hi, def) => {
 };
 
 function publicJob(job) {
-  const { id, status, step, progress, error, clips, videoTitle, notes, options } = job;
-  return { id, status, step, progress, error, clips, videoTitle, notes, options };
+  const { id, status, step, progress, error, clips, videoTitle, notes, options, auto, createdAt } = job;
+  return { id, status, step, progress, error, clips, videoTitle, notes, options, auto, createdAt };
 }
 
-app.post("/api/jobs", upload.single("video"), (req, res) => {
-  const body = req.body || {};
-  const url = (body.url || "").trim();
+const cleanOptions = (o = {}) => ({
+  clipLength: clamp(o.clipLength, 10, 180, 30),
+  maxClips: clamp(o.maxClips, 1, 12, 5),
+  format: ["blur", "crop", "original"].includes(o.format) ? o.format : "blur",
+  burnTitle: o.burnTitle === true || o.burnTitle === "true",
+});
 
-  if (!req.file) {
-    let ok = false;
-    try {
-      ok = ["http:", "https:"].includes(new URL(url).protocol);
-    } catch {}
-    if (!ok) return res.status(400).json({ error: "Colle un lien de vidéo valide ou choisis un fichier vidéo." });
+const isHttpUrl = (url) => {
+  try {
+    return ["http:", "https:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
   }
+};
 
-  const id = req.file ? req.jobId : crypto.randomBytes(8).toString("hex");
+/** Crée un traitement et le place dans la file d'attente. */
+function startJob({ id = crypto.randomBytes(8).toString("hex"), url = null, file = null, title = null, options, ai, auto = false }) {
   const dir = path.join(JOBS_DIR, id);
   fs.mkdirSync(dir, { recursive: true });
-
   const job = {
     id,
     dir,
-    url: req.file ? null : url,
-    upload: req.file ? req.file.path : null,
-    uploadName: req.file ? req.file.originalname : null,
-    ai: resolveAi(body),
-    options: {
-      clipLength: clamp(body.clipLength, 10, 180, 30),
-      maxClips: clamp(body.maxClips, 1, 12, 5),
-      format: ["blur", "crop", "original"].includes(body.format) ? body.format : "blur",
-      burnTitle: body.burnTitle === true || body.burnTitle === "true",
-    },
+    url,
+    upload: file ? file.path : null,
+    uploadName: file ? file.originalname : null,
+    ai,
+    options: cleanOptions(options),
+    auto,
+    videoTitle: title,
     status: "queued",
     step: "En file d'attente",
     progress: 0,
@@ -123,9 +133,74 @@ app.post("/api/jobs", upload.single("video"), (req, res) => {
       job.status = "error";
       job.error = err.message || "Erreur inconnue";
     }
+    // Sauvegarde pour retrouver les clips après un redémarrage (sans la clé de l'IA).
+    try {
+      fs.writeFileSync(path.join(dir, "job.json"), JSON.stringify({ ...publicJob(job), url: job.url }));
+    } catch {}
   });
+  return job;
+}
 
+const watcher = createWatcher({
+  file: path.join(DATA, "watch.json"),
+  startJob: (v) => startJob({ ...v, auto: true }),
+});
+
+app.post("/api/jobs", upload.single("video"), (req, res) => {
+  const body = req.body || {};
+  const url = (body.url || "").trim();
+  if (!req.file && !isHttpUrl(url)) {
+    return res.status(400).json({ error: "Colle un lien de vidéo valide ou choisis un fichier vidéo." });
+  }
+  const job = startJob({
+    id: req.file ? req.jobId : undefined,
+    url: req.file ? null : url,
+    file: req.file || null,
+    options: body,
+    ai: resolveAi(body),
+  });
   res.status(202).json(publicJob(job));
+});
+
+app.get("/api/jobs", (_req, res) => {
+  const list = [...jobs.values()]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(({ id, status, step, progress, error, videoTitle, auto, createdAt, clips }) => ({
+      id, status, step, progress, error, videoTitle, auto, createdAt, clipCount: clips.length,
+    }));
+  res.json(list);
+});
+
+// --- Automatisation ---
+app.get("/api/watch", (_req, res) => res.json(watcher.view()));
+
+app.put("/api/watch", (req, res) => {
+  const body = req.body || {};
+  const patch = {};
+  if ("enabled" in body) patch.enabled = body.enabled === true;
+  if ("keyword" in body) patch.keyword = String(body.keyword || "").slice(0, 200);
+  if ("intervalMinutes" in body) patch.intervalMinutes = clamp(body.intervalMinutes, 10, 1440, 30);
+  if ("options" in body) patch.options = cleanOptions(body.options);
+  if ("aiProvider" in body) patch.ai = resolveAi(body);
+  watcher.update(patch);
+  res.json(watcher.view());
+});
+
+app.post("/api/watch/channels", (req, res) => {
+  const url = String(req.body?.url || "").trim();
+  if (!isHttpUrl(url)) return res.status(400).json({ error: "Colle l'adresse d'une chaîne ou d'une playlist." });
+  watcher.addChannel(url);
+  res.json(watcher.view());
+});
+
+app.delete("/api/watch/channels", (req, res) => {
+  watcher.removeChannel(String(req.body?.url || ""));
+  res.json(watcher.view());
+});
+
+app.post("/api/watch/check", async (_req, res) => {
+  const started = await watcher.check();
+  res.json({ started, ...watcher.view() });
 });
 
 app.get("/api/jobs/:id", (req, res) => {
@@ -157,6 +232,8 @@ setInterval(() => {
     }
   }
 }, 15 * 60 * 1000).unref();
+
+watcher.start();
 
 app.listen(PORT, () => {
   console.log(`Clipping prêt sur http://localhost:${PORT}`);

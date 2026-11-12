@@ -35,6 +35,19 @@
   #aiState { font-weight: 400; color: var(--muted); }
   #aiState.on { color: var(--ok); }
   .what { font-size: 13px; color: var(--muted); font-style: italic; }
+  .hint { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  .inline { display: flex; gap: 8px; flex-wrap: wrap; }
+  .inline input { flex: 1; min-width: 200px; }
+  input[type=text] { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: #0f1116; color: var(--text); font: inherit; }
+  .small { padding: 11px 16px; background: var(--accent2); color: #06201f; font-weight: 600; font-size: 14px; }
+  .small.ghost { background: #2a2d36; color: var(--text); }
+  ul { list-style: none; margin: 12px 0 0; padding: 0; }
+  ul li { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+  ul li:first-child { border-top: 0; }
+  ul li small { color: var(--muted); display: block; }
+  ul li small.err { color: var(--err); }
+  ul li button { padding: 7px 12px; background: #2a2d36; color: var(--text); font-size: 13px; white-space: nowrap; }
+  .tag { font-size: 11px; padding: 2px 7px; border-radius: 99px; background: #2a2d36; color: var(--accent2); margin-left: 6px; }
   .go { margin-top: 18px; width: 100%; padding: 14px; background: var(--accent); color: #fff; font-weight: 700; font-size: 17px; }
   .go:disabled { opacity: .5; cursor: wait; }
   #status { margin-top: 20px; display: none; }
@@ -128,6 +141,41 @@
     <div id="clips"></div>
   </div>
 
+  <h2>Automatisation</h2>
+  <div class="panel" id="auto">
+    <p class="hint">Ajoute des chaînes à surveiller : dès qu'une nouvelle vidéo sort, le site la télécharge, la découpe et prépare les titres tout seul, avec les réglages choisis en haut de la page. Les clips t'attendent ensuite dans « Mes clips ».</p>
+    <label for="chan">Chaîne ou playlist à surveiller</label>
+    <div class="inline">
+      <input type="url" id="chan" placeholder="https://www.youtube.com/@RockstarGames" autocomplete="off">
+      <button type="button" class="small" id="chanAdd">Ajouter</button>
+    </div>
+    <ul id="chans"></ul>
+    <div class="row">
+      <div>
+        <label for="kw">Seulement les vidéos dont le titre contient (séparés par des virgules)</label>
+        <input type="text" id="kw" placeholder="gta 6, gta vi">
+      </div>
+      <div>
+        <label for="every">Vérifier</label>
+        <select id="every">
+          <option value="15">toutes les 15 minutes</option>
+          <option value="30">toutes les 30 minutes</option>
+          <option value="60">toutes les heures</option>
+          <option value="360">toutes les 6 heures</option>
+        </select>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="autoOn"> Automatisation activée</label>
+    <div class="inline" style="margin-top:14px">
+      <button type="button" class="small" id="autoSave">Enregistrer avec les réglages actuels</button>
+      <button type="button" class="small ghost" id="autoCheck">Vérifier maintenant</button>
+    </div>
+    <div class="note" id="autoMsg"></div>
+  </div>
+
+  <h2>Mes clips</h2>
+  <div class="panel"><ul id="library"><li class="hint">Aucune vidéo traitée pour l'instant.</li></ul></div>
+
   <footer>
     Ne republie que des vidéos que tu as le droit d'utiliser (les tiennes, ou avec l'accord du créateur) et laisse le crédit dans la description : TikTok et YouTube suppriment les reposts signalés par les ayants droit.
   </footer>
@@ -215,7 +263,7 @@ async function poll(id) {
     $("notes").textContent = (job.notes || []).join(" ");
     if (job.status === "error") return showStatus(job.error, job.progress, true);
     showStatus(job.step + (job.status === "done" ? " ✓" : "…"), job.progress);
-    if (job.status === "done") return renderClips(job);
+    if (job.status === "done") { loadLibrary(); return renderClips(job); }
   }
 }
 
@@ -284,6 +332,89 @@ $("form").addEventListener("submit", async (e) => {
     $("go").disabled = false;
   }
 });
+
+// --- Automatisation et bibliothèque ---
+async function api(path, method = "GET", body) {
+  const res = await fetch(path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Erreur");
+  return json;
+}
+const when = (ts) => (ts ? new Date(ts).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "jamais");
+
+function renderWatch(w, fillForm) {
+  $("chans").replaceChildren(...w.channels.map((c) => {
+    const del = el("button", { type: "button", textContent: "Retirer" });
+    del.onclick = async () => renderWatch(await api("/api/watch/channels", "DELETE", { url: c.url }));
+    return el("li", {},
+      el("div", {}, c.url, el("small", { className: c.lastError ? "err" : "", textContent: c.lastError ? "Erreur : " + c.lastError : "Dernière vérification : " + when(c.lastCheck) })),
+      del);
+  }));
+  if (fillForm) {
+    $("kw").value = w.keyword || "";
+    $("every").value = String(w.intervalMinutes);
+    $("autoOn").checked = w.enabled;
+  }
+}
+
+async function saveWatch() {
+  const w = await api("/api/watch", "PUT", {
+    enabled: $("autoOn").checked,
+    keyword: $("kw").value,
+    intervalMinutes: Number($("every").value),
+    options: { clipLength: $("len").value, maxClips: $("max").value, format: $("format").value, burnTitle: $("burn").checked },
+    aiProvider: $("prov").value === "none" && serverAi ? "server" : $("prov").value,
+    aiKey: $("key").value.trim(), aiModel: $("aiModel").value.trim(), aiBaseUrl: $("aiUrl").value.trim(),
+  });
+  renderWatch(w);
+  return w;
+}
+
+$("chanAdd").onclick = async () => {
+  try {
+    renderWatch(await api("/api/watch/channels", "POST", { url: $("chan").value.trim() }));
+    $("chan").value = "";
+    $("autoMsg").textContent = "Chaîne ajoutée. Active l'automatisation puis enregistre.";
+  } catch (err) { $("autoMsg").textContent = err.message; }
+};
+$("autoSave").onclick = async () => {
+  try {
+    const w = await saveWatch();
+    $("autoMsg").textContent = w.enabled ? `Enregistré : ${w.channels.length} chaîne(s) surveillée(s), IA : ${w.aiProvider || "aucune"}.` : "Enregistré. L'automatisation est désactivée.";
+  } catch (err) { $("autoMsg").textContent = err.message; }
+};
+$("autoCheck").onclick = async () => {
+  $("autoMsg").textContent = "Vérification en cours…";
+  try {
+    await saveWatch();
+    const r = await api("/api/watch/check", "POST");
+    renderWatch(r);
+    $("autoMsg").textContent = r.started.length ? "Nouvelles vidéos en cours de découpage : " + r.started.join(" · ") : "Aucune nouvelle vidéo.";
+    loadLibrary();
+  } catch (err) { $("autoMsg").textContent = err.message; }
+};
+
+async function loadLibrary() {
+  let list;
+  try { list = await api("/api/jobs"); } catch { return; }
+  if (!list.length) return;
+  $("library").replaceChildren(...list.map((j) => {
+    const state = j.status === "done" ? `${j.clipCount} clip${j.clipCount > 1 ? "s" : ""}` : j.status === "error" ? "Erreur : " + j.error : `${j.step} (${j.progress} %)`;
+    const row = el("li", {},
+      el("div", {}, j.videoTitle || "Vidéo en attente", ...(j.auto ? [el("span", { className: "tag", textContent: "auto" })] : []),
+        el("small", { className: j.status === "error" ? "err" : "", textContent: `${when(j.createdAt)} · ${state}` })));
+    if (j.status === "done") {
+      const open = el("button", { type: "button", textContent: "Voir les clips" });
+      open.onclick = async () => { renderClips(await api("/api/jobs/" + j.id)); $("results").scrollIntoView({ behavior: "smooth" }); };
+      row.append(open);
+    }
+    return row;
+  }));
+}
+
+api("/api/watch").then((w) => renderWatch(w, true)).catch(() => {});
+loadLibrary();
+setInterval(loadLibrary, 20000);
 </script>
 </body>
 </html>
