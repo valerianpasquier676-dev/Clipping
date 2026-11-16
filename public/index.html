@@ -269,6 +269,7 @@ let watching = null; // la barre de progression suit la dernière vidéo lancée
 
 async function poll(id) {
   let misses = 0;
+  let shown = 0;
   for (;;) {
     await new Promise((r) => setTimeout(r, 1500));
     if (watching !== id) return;
@@ -289,6 +290,8 @@ async function poll(id) {
     if (job.status === "error") return showStatus(job.error, job.progress, true);
     showStatus(job.step + (job.status === "done" ? " ✓" : queuePaused ? " (en pause)" : "…"), job.progress);
     if (job.status === "done") { loadLibrary(); return renderClips(job); }
+    // Chaque clip s'affiche dès qu'il est prêt, sans attendre les suivants.
+    if (job.clips.length > shown) { shown = job.clips.length; renderClips(job); }
   }
 }
 
