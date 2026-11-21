@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Mes abonnements</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Cpath d='M8 12h16M8 17h9' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap bar">
+      <h1>Mes abonnements</h1>
+      <div class="actions">
+        <button class="btn primary" id="addBtn">+ Ajouter</button>
+        <button class="btn" id="cardsBtn">Mes cartes</button>
+        <details class="menu">
+          <summary class="btn">Données</summary>
+          <div class="menu-pop">
+            <button id="statementBtn">Importer un relevé bancaire…</button>
+            <button id="exportJson">Sauvegarder (JSON)</button>
+            <button id="exportCsv">Exporter en tableur (CSV)</button>
+            <button id="importBtn">Restaurer une sauvegarde (JSON)…</button>
+            <button id="wipeBtn" class="danger">Tout effacer</button>
+          </div>
+        </details>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="tiles" id="tiles" aria-label="Résumé"></section>
+
+    <div class="layout">
+      <section class="col-main">
+        <div class="filters">
+          <div class="chips" id="cardChips" role="group" aria-label="Filtrer par carte"></div>
+          <div class="row">
+            <input type="search" id="search" placeholder="Rechercher…" aria-label="Rechercher">
+            <select id="statusFilter" aria-label="Statut">
+              <option value="active">Actifs</option>
+              <option value="all">Tous</option>
+              <option value="paused">En pause</option>
+              <option value="cancelled">Résiliés</option>
+            </select>
+            <select id="sortBy" aria-label="Trier par">
+              <option value="next">Prochain prélèvement</option>
+              <option value="cost">Coût mensuel</option>
+              <option value="name">Nom</option>
+            </select>
+          </div>
+        </div>
+        <ul class="list" id="list"></ul>
+        <div class="empty" id="empty" hidden></div>
+      </section>
+
+      <aside class="col-side">
+        <section class="panel"><h2>À venir <small>30 jours</small></h2><ul class="upcoming" id="upcoming"></ul></section>
+        <section class="panel"><h2>Par carte <small>par mois</small></h2><div id="byCard"></div></section>
+        <section class="panel"><h2>Par catégorie <small>par mois</small></h2><div id="byCat"></div></section>
+      </aside>
+    </div>
+
+    <p class="foot">Les données restent dans ce navigateur (aucun serveur). Pense à faire une sauvegarde depuis « Données ». Ne saisis jamais de numéro de carte complet : seuls les 4 derniers chiffres sont utiles.</p>
+  </main>
+
+  <dialog id="subDialog">
+    <form method="dialog" id="subForm" class="form">
+      <h2 id="subTitle">Nouvel abonnement</h2>
+      <label>Nom<input name="name" required maxlength="80" placeholder="Netflix, salle de sport…"></label>
+      <div class="two">
+        <label>Montant (€)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0" required></label>
+        <label>Fréquence<select name="cycle"></select></label>
+      </div>
+      <div class="two">
+        <label>Date d'un prélèvement<input name="startDate" type="date" required>
+          <small>Un prélèvement passé ou à venir : le prochain est calculé tout seul.</small></label>
+        <label>Carte<select name="cardId"></select></label>
+      </div>
+      <div class="two">
+        <label>Catégorie<select name="category"></select></label>
+        <label>Statut<select name="status"></select></label>
+      </div>
+      <label>Lien pour résilier (optionnel)<input name="url" type="url" placeholder="https://…"></label>
+      <label>Notes<textarea name="notes" rows="2" maxlength="500"></textarea></label>
+      <div class="dlg-actions">
+        <button type="button" class="btn danger-text" id="deleteSub" hidden>Supprimer</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Annuler</button>
+        <button type="submit" class="btn primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="cardsDialog">
+    <div class="form">
+      <h2>Mes cartes</h2>
+      <p class="hint">Un nom et les 4 derniers chiffres suffisent pour les reconnaître.</p>
+      <ul class="cards-list" id="cardsList"></ul>
+      <form id="cardForm" class="card-add">
+        <input name="name" required maxlength="40" placeholder="Nom (ex. Visa Boursorama)" aria-label="Nom de la carte">
+        <input name="last4" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="4 derniers" aria-label="4 derniers chiffres">
+        <input name="color" type="color" value="#6366f1" aria-label="Couleur">
+        <button class="btn primary" type="submit">Ajouter</button>
+      </form>
+      <div class="dlg-actions"><span class="spacer"></span><button type="button" class="btn" data-close>Fermer</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="stmtDialog">
+    <div class="form">
+      <h2>Retrouver mes abonnements automatiquement</h2>
+      <div id="stmtStep1">
+        <p class="hint">Télécharge l'historique de tes opérations depuis l'espace en ligne de ta banque (export <b>CSV</b> ou <b>OFX</b>, idéalement 6 à 12 mois). Le site repère les paiements qui reviennent à intervalles réguliers. Le fichier est analysé dans ton navigateur et n'est envoyé nulle part.</p>
+        <label>Carte ou compte concerné par ce relevé
+          <select id="stmtCard"></select></label>
+        <label class="file">
+          <span class="btn primary">Choisir le fichier du relevé…</span>
+          <input type="file" id="stmtFile" accept=".csv,.ofx,.qfx,.txt,text/csv,text/plain" hidden>
+        </label>
+      </div>
+      <div id="stmtStep2" hidden>
+        <p class="hint" id="stmtSummary"></p>
+        <ul class="found" id="stmtList"></ul>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="stmtBack" hidden>Autre fichier</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Fermer</button>
+        <button type="button" class="btn primary" id="stmtAdd" hidden>Ajouter</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
