@@ -1,0 +1,17 @@
+{
+  "name": "Ma garde-robe",
+  "short_name": "Garde-robe",
+  "description": "Répertorie tes vêtements et prépare tes tenues de la semaine selon la météo, ta morphologie et ton style.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f1ec",
+  "theme_color": "#2f4f3f",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
