@@ -3,6 +3,7 @@ import {
   nextRenewal, toMonthly, toYearly, totals, groupMonthly, upcoming,
   cleanData, cleanSub, cleanCard, newId, toCSV, todayISO, daysBetween, parseDate,
 } from "./logic.js";
+import { readStatement, detectSubscriptions } from "./detect.js";
 
 const KEY = "abonnements:v1";
 const $ = (sel) => document.querySelector(sel);
@@ -130,6 +131,7 @@ function renderList(today) {
       empty.replaceChildren(
         h("p", {}, "Aucun abonnement pour l'instant."),
         h("button", { class: "btn primary", onclick: () => openSub() }, "+ Ajouter mon premier abonnement"),
+        h("button", { class: "btn", onclick: openStatement }, "Retrouver automatiquement depuis un relevé bancaire"),
         h("button", { class: "btn", onclick: loadSample }, "Voir avec des exemples"),
       );
     } else empty.replaceChildren(h("p", {}, "Aucun abonnement ne correspond à ce filtre."));
@@ -287,6 +289,88 @@ function loadSample() {
   save(); render();
 }
 
+/* ---------- Import d'un relevé bancaire ---------- */
+
+const stmtDlg = $("#stmtDialog");
+let found = [];
+
+function openStatement() {
+  fillSelect($("#stmtCard"), [["", "Sans carte"], ...data.cards.map((c) => [c.id, cardLabel(c)])], data.cards[0]?.id ?? "");
+  showStatementStep(1);
+  if (!stmtDlg.open) stmtDlg.showModal();
+}
+function showStatementStep(n) {
+  $("#stmtStep1").hidden = n !== 1;
+  $("#stmtStep2").hidden = n !== 2;
+  $("#stmtBack").hidden = n !== 2;
+  $("#stmtAdd").hidden = n !== 2;
+}
+
+// Les exports de banques françaises sont souvent en Windows-1252 : on essaie UTF-8 d'abord.
+async function readText(file) {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+  catch { return new TextDecoder("windows-1252").decode(buf); }
+}
+
+const CONF = { high: ["Très probable", "badge good"], medium: ["Probable", "badge"], low: ["À confirmer", "badge warn"] };
+
+function renderFound() {
+  const list = $("#stmtList");
+  list.replaceChildren(...found.map((f) => {
+    const [label, cls] = CONF[f.confidence];
+    const off = f.already;
+    return h("li", { class: off ? "skip" : "" },
+      h("input", { type: "checkbox", checked: f.checked, disabled: off, "aria-label": "Ajouter " + f.name, onchange: (e) => { f.checked = e.target.checked; updateAddButton(); } }),
+      h("input", { class: "nm", value: f.name, maxlength: 80, "aria-label": "Nom", disabled: off, oninput: (e) => { f.name = e.target.value; } }),
+      h("div", { class: "px" }, eur.format(f.amount), h("small", {}, CYCLES[f.cycle].label.toLowerCase())),
+      h("div", { class: "det" },
+        off ? h("span", { class: "badge off" }, "Déjà dans ta liste") : h("span", { class: cls }, label),
+        f.variable ? h("span", { class: "badge warn" }, "montant variable") : null,
+        f.stale ? h("span", { class: "badge warn" }, "plus de prélèvement récent : résilié ?") : null,
+        h("span", {}, `${f.count} prélèvement${f.count > 1 ? "s" : ""} · dernier le ${dateFmt.format(parseDate(f.startDate))}`),
+      ));
+  }));
+  updateAddButton();
+}
+function updateAddButton() {
+  const n = found.filter((f) => f.checked && !f.already).length;
+  $("#stmtAdd").textContent = n ? `Ajouter ${n} abonnement${n > 1 ? "s" : ""}` : "Ajouter";
+  $("#stmtAdd").disabled = !n;
+}
+
+$("#statementBtn").addEventListener("click", () => { closeMenu(); openStatement(); });
+$("#stmtBack").addEventListener("click", () => showStatementStep(1));
+$("#stmtFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (file.size > 20e6) return alert("Ce fichier est trop gros pour un relevé.");
+  const tx = readStatement(await readText(file));
+  if (!tx.length) return alert("Je n'ai pas réussi à lire ce fichier. Il faut un export CSV ou OFX de l'historique des opérations (avec une colonne date, un libellé et un montant).");
+  const res = detectSubscriptions(tx, data.subs);
+  found = res.candidates.map((c) => ({ ...c, checked: !c.already && !c.stale && c.confidence !== "low" }));
+  const range = res.from && res.to ? ` du ${dateFmt.format(parseDate(res.from))} au ${dateFmt.format(parseDate(res.to))}` : "";
+  const months = res.from && res.to ? daysBetween(res.from, res.to) / 30.4 : 0;
+  $("#stmtSummary").textContent = found.length
+    ? `${res.analyzed} opérations analysées${range} : ${found.length} abonnement${found.length > 1 ? "s" : ""} possible${found.length > 1 ? "s" : ""}. Décoche ce qui n'en est pas un et corrige les noms si besoin.${months < 12 ? " Les abonnements annuels ne sont repérés que si le relevé couvre plus d'un an : ajoute-les à la main." : ""}`
+    : `${res.analyzed} opérations analysées${range}, mais aucun paiement récurrent trouvé. Essaie avec une période plus longue (3 mois minimum).`;
+  renderFound();
+  showStatementStep(2);
+});
+$("#stmtAdd").addEventListener("click", () => {
+  const cardId = $("#stmtCard").value;
+  const ids = new Set(data.cards.map((c) => c.id));
+  let n = 0;
+  for (const f of found) {
+    if (!f.checked || f.already) continue;
+    const sub = cleanSub({ name: f.name.trim() || "Abonnement", amount: f.amount, cycle: f.cycle, startDate: f.startDate, cardId, category: f.category, status: "active" }, ids);
+    if (sub) { data.subs.push(sub); n++; }
+  }
+  save(); stmtDlg.close(); render();
+  if (n) alert(`${n} abonnement${n > 1 ? "s ajoutés" : " ajouté"}. Tu peux en modifier les détails en cliquant dessus.`);
+});
+
 /* ---------- Branchements ---------- */
 
 $("#addBtn").addEventListener("click", () => openSub());
@@ -294,7 +378,7 @@ $("#search").addEventListener("input", (e) => { view.q = e.target.value; render(
 $("#statusFilter").addEventListener("change", (e) => { view.status = e.target.value; render(); });
 $("#sortBy").addEventListener("change", (e) => { view.sort = e.target.value; render(); });
 document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
-for (const d of [subDlg, cardsDlg]) d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+for (const d of [subDlg, cardsDlg, stmtDlg]) d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
 document.addEventListener("click", (e) => { const m = document.querySelector(".menu"); if (!m.contains(e.target)) m.removeAttribute("open"); });
 
 render();

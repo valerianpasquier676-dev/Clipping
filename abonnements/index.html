@@ -18,9 +18,10 @@
         <details class="menu">
           <summary class="btn">Données</summary>
           <div class="menu-pop">
+            <button id="statementBtn">Importer un relevé bancaire…</button>
             <button id="exportJson">Sauvegarder (JSON)</button>
             <button id="exportCsv">Exporter en tableur (CSV)</button>
-            <button id="importBtn">Restaurer une sauvegarde…</button>
+            <button id="importBtn">Restaurer une sauvegarde (JSON)…</button>
             <button id="wipeBtn" class="danger">Tout effacer</button>
           </div>
         </details>
@@ -105,6 +106,31 @@
         <button class="btn primary" type="submit">Ajouter</button>
       </form>
       <div class="dlg-actions"><span class="spacer"></span><button type="button" class="btn" data-close>Fermer</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="stmtDialog">
+    <div class="form">
+      <h2>Retrouver mes abonnements automatiquement</h2>
+      <div id="stmtStep1">
+        <p class="hint">Télécharge l'historique de tes opérations depuis l'espace en ligne de ta banque (export <b>CSV</b> ou <b>OFX</b>, idéalement 6 à 12 mois). Le site repère les paiements qui reviennent à intervalles réguliers. Le fichier est analysé dans ton navigateur et n'est envoyé nulle part.</p>
+        <label>Carte ou compte concerné par ce relevé
+          <select id="stmtCard"></select></label>
+        <label class="file">
+          <span class="btn primary">Choisir le fichier du relevé…</span>
+          <input type="file" id="stmtFile" accept=".csv,.ofx,.qfx,.txt,text/csv,text/plain" hidden>
+        </label>
+      </div>
+      <div id="stmtStep2" hidden>
+        <p class="hint" id="stmtSummary"></p>
+        <ul class="found" id="stmtList"></ul>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn" id="stmtBack" hidden>Autre fichier</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Fermer</button>
+        <button type="button" class="btn primary" id="stmtAdd" hidden>Ajouter</button>
+      </div>
     </div>
   </dialog>
 

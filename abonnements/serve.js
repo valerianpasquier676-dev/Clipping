@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
 const port = Number(process.env.PORT) || 3100;
-const allowed = new Set(["index.html", "app.js", "logic.js", "style.css"]);
+const allowed = new Set(["index.html", "app.js", "logic.js", "detect.js", "style.css"]);
 
 http.createServer((req, res) => {
   const name = decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/^\/+/, "") || "index.html";

@@ -168,3 +168,18 @@ dialog::backdrop { background: rgba(10, 12, 24, .55); }
   .card-add { grid-template-columns: 1fr 1fr 36px; }
   .card-add .btn { grid-column: 1 / -1; }
 }
+
+/* Import de relevé */
+#stmtDialog { width: min(680px, calc(100vw - 24px)); }
+.file { cursor: pointer; align-self: flex-start; }
+.file .btn { display: inline-block; }
+.found { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow: auto; }
+.found li { display: grid; grid-template-columns: 22px 1fr auto; gap: 4px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.found li.skip { opacity: .55; }
+.found input[type="checkbox"] { width: 18px; height: 18px; padding: 0; accent-color: var(--accent); }
+.found .nm { font-weight: 600; width: 100%; padding: 4px 8px; }
+.found .det { grid-column: 2; color: var(--muted); font-size: 12px; display: flex; gap: 4px 8px; flex-wrap: wrap; align-items: center; }
+.found .px { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; grid-row: 1; grid-column: 3; }
+.found .px small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.badge.good { background: #dcfce7; color: #166534; }
+@media (prefers-color-scheme: dark) { .badge.good { background: #14301e; color: #86efac; } }
