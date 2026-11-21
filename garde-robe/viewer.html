@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Visualiseur de modèles 3D</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .vw { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; } .vw .sim-box { height: min(80vh, 720px); }
+    @media (max-width: 760px) { .vw { grid-template-columns: 1fr; } }
+    #status { font-size: 13px; } #status.err { color: var(--danger); } #status.ok { color: var(--good); }
+  </style>
+</head>
+<body>
+<main class="page" style="padding-top:22px">
+  <h1>Visualiseur de modèles 3D</h1>
+  <p class="muted">Charge un fichier <b>.glb</b> pour le voir porté par le mannequin, sans rien installer ni configurer. Une fois satisfait, copie-le dans <code>models/</code> et déclare-le dans <code>models/models.json</code> (voir <code>models/GUIDE-BLENDER.md</code>).</p>
+  <div class="vw">
+    <div class="card stack">
+      <label class="field"><span class="lbl">Fichier .glb</span><input id="file" type="file" accept=".glb,.gltf,model/gltf-binary"></label>
+      <label class="field"><span class="lbl">Catégorie du vêtement</span><select id="cat"></select></label>
+      <label class="field"><span class="lbl">Couleur de la pièce (matériaux « couleur… »)</span><input id="color" type="color" value="#7b7f86"></label>
+      <label class="check"><input id="under" type="checkbox" checked> Avec t-shirt, jean et baskets neutres</label>
+      <label class="check"><input id="ref" type="checkbox" checked> Mannequin de référence (175 cm)</label>
+      <div class="form-grid" id="meas" hidden>
+        <label class="field"><span class="lbl">Taille</span><input id="h" type="number" value="180"></label>
+        <label class="field"><span class="lbl">Poitrine</span><input id="c" type="number" value="104"></label>
+        <label class="field"><span class="lbl">Taille (ventre)</span><input id="w" type="number" value="88"></label>
+        <label class="field"><span class="lbl">Hanches</span><input id="p" type="number" value="102"></label>
+      </div>
+      <p id="status" class="muted">Aucun fichier chargé.</p>
+    </div>
+    <div class="card"><div id="box" class="sim-box is3d"></div></div>
+  </div>
+</main>
+<script type="module">
+import * as THREE from "./vendor/three.min.js";
+import { Mannequin, setModel, REFERENCE_PROFILE } from "./mannequin3d.js";
+import { mannequinFromProfile } from "./morph.js";
+import { CATEGORIES, CAT } from "./data.js";
+
+const $ = (id) => document.getElementById(id);
+$("cat").append(...CATEGORIES.map((c) => Object.assign(document.createElement("option"), { value: c.key, textContent: `${c.label}  (${c.key})`, selected: c.key === "sweat" })));
+const m = new Mannequin($("box"), { autoRotate: false });
+let loaded = false;
+
+function refresh() {
+  const prof = $("ref").checked ? REFERENCE_PROFILE : { height: $("h").value, chest: $("c").value, waist: $("w").value, hips: $("p").value };
+  $("meas").hidden = $("ref").checked;
+  m.setBody(mannequinFromProfile({ ...prof, skin: "#c9b8a8" }));
+  const cat = $("cat").value, slot = CAT[cat].slot, out = {};
+  if ($("under").checked) Object.assign(out, { top: { category: "tshirt", colors: ["#e8e8e4"] }, bottom: { category: "jean", colors: ["#3a5a85"] }, shoes: { category: "baskets", colors: ["#f2f2ee"] } });
+  if (loaded || !["top", "bottom", "shoes"].includes(slot)) out[slot] = { category: cat, colors: [$("color").value] };
+  if (slot === "top") delete out.top, (out.top = { category: cat, colors: [$("color").value] });
+  m.setOutfit(out);
+}
+$("file").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const buf = await f.arrayBuffer();
+  try {
+    const gltf = await new THREE.GLTFLoader().parseAsync(buf, "");
+    let tris = 0, tinted = 0;
+    gltf.scene.traverse((o) => { if (o.isMesh) { tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; [].concat(o.material).forEach((mt) => { if (/^(couleur|color|tissu)/i.test(mt.name || "")) tinted++; }); } });
+    setModel($("cat").value, gltf.scene); loaded = true; refresh();
+    const s = $("status"); s.className = "ok";
+    s.textContent = `✓ ${f.name} chargé : ${Math.round(tris).toLocaleString("fr-FR")} triangles, ${tinted} matériau(x) teinté(s)` + (tris > 30000 ? " — un peu lourd : vise moins de 20 000 triangles." : "") + (tinted ? "" : " — aucun matériau ne commence par « couleur » : la couleur de la pièce ne s'appliquera pas.");
+  } catch (err) { const s = $("status"); s.className = "err"; s.textContent = "Fichier illisible (ce n'est pas un .glb valide) : " + (err?.message || err); }
+});
+for (const id of ["cat", "color", "under", "ref", "h", "c", "w", "p"]) $(id).addEventListener("input", refresh);
+refresh();
+window.viewer = { m, ready: true };
+</script>
+</body>
+</html>

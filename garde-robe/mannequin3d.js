@@ -8,6 +8,32 @@ import * as THREE from "./vendor/three.min.js";
 const FABRIC_THICKNESS = { tshirt: 0.007, debardeur: 0.005, polo: 0.008, chemise: 0.007, pull: 0.016, sweat: 0.02, gilet: 0.014, veste: 0.018, blouson: 0.02, manteau: 0.026, doudoune: 0.04, impermeable: 0.014, coupevent: 0.01 };
 const FIT_OFFSET = { slim: -0.004, regular: 0.004, oversize: 0.016 };
 
+/* ---------- Modèles GLB fournis (optionnels) ---------- */
+// Un fichier models/<fichier>.glb déclaré dans models/models.json ({"sweat": "sweat.glb"}) remplace le vêtement simplifié
+// de cette catégorie. Il est modelé sur le mannequin de référence (models/mannequin-reference.glb), mis à l'échelle sur
+// tes mesures, et les matériaux dont le nom commence par « couleur » prennent la couleur de la pièce.
+
+export const REFERENCE_PROFILE = { height: 175, chest: 96, waist: 80, hips: 96, shoulders: 44 };
+const REF = { H: 1.75, A: 96 / 100 / (Math.PI * 1.7) };
+const modelScenes = new Map();
+const modelLoading = new Set();
+let modelManifest = null;
+
+export function setModel(category, scene) { if (scene) modelScenes.set(category, scene); else modelScenes.delete(category); }
+export const hasModel = (category) => modelScenes.has(category);
+
+export async function ensureModels(categories) {
+  if (!modelManifest) modelManifest = await fetch("models/models.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+  let changed = false;
+  await Promise.all([...new Set(categories)].map(async (c) => {
+    if (modelScenes.has(c) || modelLoading.has(c) || !modelManifest[c]) return;
+    modelLoading.add(c);
+    try { const gltf = await new THREE.GLTFLoader().loadAsync("models/" + modelManifest[c]); modelScenes.set(c, gltf.scene); changed = true; }
+    catch (e) { console.warn("Modèle 3D illisible :", modelManifest[c], e?.message || e); }
+  }));
+  return changed;
+}
+
 /* ---------- Courbes lissées (profil du torse) ---------- */
 
 function curve(ctrl) {
@@ -99,6 +125,7 @@ function fabric(item, extra = {}) {
   const c0 = (item.colors && item.colors[0]) || "#808080";
   const c1 = (item.colors && item.colors[1]) || (item.pattern === "carreaux" ? "#ffffff" : "#f4f4f2");
   const m = new THREE.MeshStandardMaterial({ color: c0, roughness: 0.88, metalness: 0, side: THREE.DoubleSide, ...extra });
+  m.name = "couleur_principale";
   if (["raye", "carreaux", "motif"].includes(item.pattern)) { m.map = patternTexture(item.pattern, c0, c1); m.color.set("#ffffff"); }
   return m;
 }
@@ -218,6 +245,7 @@ export class Mannequin {
     if (!this.renderer) return;
     this.items = outfit || {};
     this._rebuild();
+    ensureModels(Object.values(this.items).filter(Boolean).map((i) => i.category)).then((changed) => { if (changed && !this.dead) this._rebuild(); });
   }
 
   /* ---------- Construction ---------- */
@@ -307,8 +335,29 @@ export class Mannequin {
       if (B.hairStyle === "long") { const back = new THREE.Mesh(new THREE.CylinderGeometry(hr * 0.8, hr * 0.7, hr * 2.4, 20, 1, true, Math.PI * 0.35, Math.PI * 1.3), hair); back.material.side = THREE.DoubleSide; back.position.set(0, this.headY - hr * 1.1, -hr * 0.2); g.add(back); this._track(back.geometry); }
     }
 
+    this._bodyCount = g.children.length;
     this._dress(g, B, H);
   }
+
+  // Place un modèle GLB fourni : mis à l'échelle d'après le mannequin de référence, matériaux « couleur* » teintés.
+  _glb(g, item, slot, B, H) {
+    const inst = modelScenes.get(item.category).clone(true);
+    const k = H / REF.H;
+    const wide = slot === "bottom" ? B.hipA / REF.A : ["top", "mid", "outer", "dress"].includes(slot) ? B.chestA / REF.A : k;
+    inst.scale.set(wide, k, wide);
+    const tint = item.colors?.[0];
+    inst.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const cloned = mats.map((m) => { const c = m.clone(); if (tint && /^(couleur|color|tissu)/i.test(c.name || "")) c.color.set(tint); if (["top", "mid", "outer", "dress", "bottom"].includes(slot)) c.side = THREE.DoubleSide; this._track(c); return c; });
+      o.material = Array.isArray(o.material) ? cloned : cloned[0];
+    });
+    g.add(inst);
+  }
+
+  // Les vêtements seuls (sans le corps), pour exporter un exemple en GLB.
+  garmentsGroup() { const grp = new THREE.Group(); this.figure.children.slice(this._bodyCount).forEach((c) => grp.add(c.clone(true))); return grp; }
 
   _limb(p0, p1, r0, r1, mat, seg = 16, open = false) {
     const dir = p1.clone().sub(p0), len = dir.length();
@@ -339,7 +388,9 @@ export class Mannequin {
   /* ---------- Vêtements ---------- */
 
   _dress(g, B, H) {
-    const it = this.items;
+    // Pièces fournies en GLB : placées telles quelles, le vêtement simplifié ne s'en occupe plus.
+    const it = { ...this.items };
+    for (const [slot, item] of Object.entries(this.items)) if (item && modelScenes.has(item.category)) { this._glb(g, item, slot, B, H); delete it[slot]; }
     const A = this._arms;
     const add = (o) => { if (o) { g.add(o); o.traverse?.((c) => { if (c.isMesh) c.castShadow = true; }); } return o; };
 

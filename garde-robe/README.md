@@ -13,6 +13,10 @@ Site pour répertorier tes vêtements et laisser un algorithme préparer **chaqu
 - **Parfums** : ta collection, le meilleur choix du jour selon température, pluie, thème et contexte, dosage, familles olfactives, guide d'application.
 - **Marques** : les marques indépendantes préchargées (Stuque Divin by Divin, NoClout, Cynique d'Avril, Supply Vicinity) sont des noms saisis tels que donnés : corrige l'orthographe dans *Garde-robe → Marques*. Le style et la coupe d'une marque préremplissent les nouvelles pièces et orientent vers les bons thèmes (streetwear…).
 
+## Modèles 3D réalistes (optionnel)
+
+Le mannequin habille les pièces avec des vêtements simplifiés. Pour un rendu plus réaliste, modélise tes propres vêtements dans Blender (gratuit, sans compte) : voir `models/GUIDE-BLENDER.md`. Le mannequin de référence à utiliser pour modéliser est `models/mannequin-reference.glb`, et `viewer.html` permet de tester un fichier `.glb` porté par le mannequin avant de le déclarer dans `models/models.json`.
+
 ## Lancer
 
 ```bash
@@ -28,7 +32,7 @@ Tout est stocké dans le navigateur (IndexedDB), photos comprises : rien n'est e
 
 ## Limites
 
-- La 3D est une **simulation stylisée** (mannequin paramétrique), pas une reconstruction photo-réaliste du vêtement. Pour le réalisme, la planche utilise tes vraies photos.
+- Sans modèles GLB fournis, la 3D est une **simulation stylisée** (mannequin paramétrique), pas une reconstruction photo-réaliste du vêtement. Pour le réalisme, la planche utilise tes vraies photos.
 - Le détourage fonctionne mieux sur fond uni et contrasté ; blanc sur blanc est signalé comme peu fiable.
 - Les conseils de morphologie, de couleurs et de parfums sont des repères de style généraux.
 
